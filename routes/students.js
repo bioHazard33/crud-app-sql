@@ -19,7 +19,7 @@ router.get("/", async (req, res) => {
 
 // Get Specific Student Whole Details
 router.get("/:id", auth, async (req, res) => {
-    if (req.id !== parseInt(req.params.id))
+    if (req.id !== parseInt(process.env.ADMIN_ID) && req.id !== parseInt(req.params.id))
         return res
             .status(401)
             .send({
@@ -111,5 +111,65 @@ router.post("/signup", async (req, res) => {
         error: null,
     });
 });
+
+router.put('/:id' , auth ,async (req,res)=>{
+    let studentId=parseInt(req.params.id)
+    if(req.id!==studentId){
+        return res.status(400).send({data:null,error:'Invalid token or Student Does not exists'})
+    }
+
+    let validUpdates=['username','password'];
+    if(req.body.password){
+        req.body.password=parseInt(req.body.password);
+        if(req.body.password.length<=5)  return res.status(400).send({data:null,error:'Invalid Form data'});
+    }
+    const keys=Object.keys(req.body)
+
+    keys.forEach(element => {
+        if(validUpdates.indexOf(element)===-1)   return res.status(400).send({data:null,error:'Not a valid update'})
+    });
+
+    let [error, data] = await to(
+        db.execQuery(`SELECT * FROM students WHERE id=${studentId}`)
+    );
+    if (error) return res.status(500).send({ data: null, error });
+
+    let result=data[0];
+
+    keys.forEach(element=>{
+        result[element]=req.body[element]
+    })
+
+    let [err, d]=await to(db.execQuery(`UPDATE students SET username = ? , password = ? WHERE id=${studentId}`,[result['username'],result['password']]))
+    if (err) return res.status(500).send({ data: null, error:err });
+
+    res.send({data:result,error:null})
+})
+
+router.delete('/:id',auth,async(req,res)=>{
+    let studentId=parseInt(req.params.id)
+    if(req.id!==studentId){
+        return res.status(400).send({data:null,error:'Invalid token or Student Does not exists'})
+    }
+
+    let [error,data] = await to(db.execQuery(`DELETE FROM students WHERE id=${studentId}`))
+    if (error) return res.status(500).send({ data: null, error });
+    
+    [error,data] = await to(db.execQuery(`SELECT courseId FROM enrolled_data WHERE studentId=${studentId}`))
+    if (error) return res.status(500).send({ data: null, error });
+    
+    let coursesEnrolled=[];
+    data.forEach(element=>{
+        coursesEnrolled.push(element.courseId)
+    })
+
+    let [err,d] = await to(db.execQuery(`DELETE FROM enrolled_data WHERE studentId=${studentId}`))
+    if (err) return res.status(500).send({ data: null, error:err });
+
+    [error,data] = await to(db.execQuery(`UPDATE courses SET availableSlots=availableSlots + 1 WHERE id in (${coursesEnrolled})`))
+    if (error) return res.status(500).send({ data: null, error });
+
+    res.status(200).send({data:'Success',error:null})
+})
 
 module.exports = router;
